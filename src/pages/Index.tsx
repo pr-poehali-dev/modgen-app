@@ -17,7 +17,13 @@ interface Mod {
   version: string;
   date: string;
   status: 'ready' | 'generating';
+  modData?: any;
 }
+
+const API_URLS = {
+  generateMod: 'https://functions.poehali.dev/8b482340-a936-48f2-ba7c-290c361fc9f8',
+  chatMod: 'https://functions.poehali.dev/85709466-8e64-4644-a7d0-242549380bd8'
+};
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState('generator');
@@ -48,54 +54,151 @@ const Index = () => {
     '1.18.2', '1.17.1', '1.16.5', '1.15.2', '1.14.4', '1.12.2', '1.10.2', '1.8.9', '1.7.10'
   ];
 
-  const handleGenerateMod = () => {
+  const handleGenerateMod = async () => {
     if (!modDescription.trim()) {
       toast.error('Опиши, какой мод ты хочешь создать');
       return;
     }
 
     setIsGenerating(true);
-    toast.loading('Генерирую мод...', { id: 'generating' });
+    toast.loading('AI генерирует твой мод...', { id: 'generating' });
 
-    setTimeout(() => {
+    try {
+      const response = await fetch(API_URLS.generateMod, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          description: modDescription,
+          loader: modLoader,
+          version: mcVersion
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка генерации');
+      }
+
       const newMod: Mod = {
-        id: Date.now().toString(),
-        name: modDescription.slice(0, 30) + '...',
+        id: data.modId,
+        name: data.modData.modName || modDescription.slice(0, 30),
         description: modDescription,
         loader: modLoader === 'forge' ? 'Forge' : 'Fabric',
         version: mcVersion,
         date: new Date().toISOString().split('T')[0],
-        status: 'ready'
+        status: 'ready',
+        modData: data.modData
       };
 
       setMods([newMod, ...mods]);
-      setIsGenerating(false);
       setCurrentModId(newMod.id);
       toast.success('Мод готов к скачиванию!', { id: 'generating' });
       setModDescription('');
-    }, 3000);
+    } catch (error: any) {
+      toast.error(error.message || 'Не удалось сгенерировать мод', { id: 'generating' });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleDownloadMod = (modId: string) => {
-    toast.success('Скачивание началось!');
+    const mod = mods.find(m => m.id === modId);
+    if (!mod || !mod.modData) {
+      toast.error('Данные мода не найдены');
+      return;
+    }
+
+    const files: any[] = [];
+    
+    if (mod.modData.mainClass) {
+      files.push({
+        path: `src/main/java/com/example/${mod.name.replace(/\s+/g, '').toLowerCase()}/Main.java`,
+        content: mod.modData.mainClass
+      });
+    }
+    
+    if (mod.modData.buildGradle) {
+      files.push({
+        path: 'build.gradle',
+        content: mod.modData.buildGradle
+      });
+    }
+    
+    if (mod.modData.files && Array.isArray(mod.modData.files)) {
+      files.push(...mod.modData.files);
+    }
+
+    const readmeContent = `# ${mod.name}\n\n${mod.description}\n\nLoader: ${mod.loader}\nMinecraft Version: ${mod.version}\n\n## Компиляция\n\n1. Установи JDK 17+\n2. Запусти: ./gradlew build\n3. Готовый мод в build/libs/`;
+    files.push({ path: 'README.md', content: readmeContent });
+
+    const fileList = files.map(f => `${f.path}:\n${f.content}`).join('\n\n---\n\n');
+    const blob = new Blob([fileList], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${mod.name.replace(/\s+/g, '_')}_mod.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    toast.success('Мод скачан! Распакуй файлы по указанным путям.');
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!chatMessage.trim()) return;
     if (!currentModId) {
       toast.error('Сначала создай мод');
       return;
     }
 
-    setChatMessages([...chatMessages, { role: 'user', content: chatMessage }]);
+    const userMessage = chatMessage;
+    setChatMessages([...chatMessages, { role: 'user', content: userMessage }]);
     setChatMessage('');
 
-    setTimeout(() => {
+    toast.loading('AI обновляет мод...', { id: 'updating' });
+
+    try {
+      const currentMod = mods.find(m => m.id === currentModId);
+      
+      const response = await fetch(API_URLS.chatMod, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          modId: currentModId,
+          message: userMessage,
+          currentCode: currentMod?.modData || {}
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка обновления');
+      }
+
       setChatMessages(prev => [...prev, { 
         role: 'ai', 
-        content: 'Отлично! Я обновлю твой мод. Через минуту будет готова новая версия для скачивания.' 
+        content: data.aiMessage || 'Готово! Мод обновлён.' 
       }]);
-    }, 1000);
+
+      setMods(prevMods => prevMods.map(m => 
+        m.id === currentModId 
+          ? { ...m, modData: data.updatedCode }
+          : m
+      ));
+
+      toast.success('Мод обновлён!', { id: 'updating' });
+    } catch (error: any) {
+      setChatMessages(prev => [...prev, { 
+        role: 'ai', 
+        content: `Ошибка: ${error.message}. Попробуй переформулировать запрос.` 
+      }]);
+      toast.error('Не удалось обновить мод', { id: 'updating' });
+    }
   };
 
   return (

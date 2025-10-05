@@ -1,0 +1,36 @@
+{
+  "tests": [
+    {
+      "name": "Update mod with new feature",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "modId": "test123",
+        "message": "Add enchantment that restores HP",
+        "currentCode": {
+          "modName": "Test Mod",
+          "mainClass": "public class TestMod {}"
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true,
+        "aiMessage": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Missing message returns error",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "modId": "test123"
+      },
+      "expectedStatus": 400,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "tests": [
+    {
+      "name": "Generate simple item mod",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "description": "Add emerald sword with 3000 durability",
+        "loader": "forge",
+        "version": "1.20.1"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true,
+        "modData": {
+          "modName": "string"
+        }
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Missing description returns error",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "loader": "fabric"
+      },
+      "expectedStatus": 400,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
