@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Dict, Any
+import urllib.request
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     '''
@@ -51,10 +52,6 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
     
     try:
-        import openai
-        
-        client = openai.OpenAI(api_key=openai_key)
-        
         system_prompt = f"""Ты эксперт по разработке модов для Minecraft.
 Генерируй готовый код мода для {loader.upper()} версии {mc_version}.
 
@@ -73,17 +70,30 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 - textureNeeded: true/false нужна ли AI-генерация текстур
 """
         
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": description}
             ],
-            temperature=0.7,
-            max_tokens=3000
+            "temperature": 0.7,
+            "max_tokens": 3000
+        }
+        
+        req = urllib.request.Request(
+            'https://api.openai.com/v1/chat/completions',
+            data=json.dumps(payload).encode('utf-8'),
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {openai_key}'
+            },
+            method='POST'
         )
         
-        ai_response = response.choices[0].message.content
+        with urllib.request.urlopen(req) as response:
+            result_data = json.loads(response.read().decode('utf-8'))
+        
+        ai_response = result_data['choices'][0]['message']['content']
         
         try:
             mod_data = json.loads(ai_response)
