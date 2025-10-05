@@ -23,11 +23,16 @@ interface Mod {
 
 const API_URLS = {
   generateMod: 'https://functions.poehali.dev/8b482340-a936-48f2-ba7c-290c361fc9f8',
-  chatMod: 'https://functions.poehali.dev/85709466-8e64-4644-a7d0-242549380bd8'
+  chatMod: 'https://functions.poehali.dev/85709466-8e64-4644-a7d0-242549380bd8',
+  portMod: 'https://functions.poehali.dev/7e44d2c4-b68b-4e11-a017-48c1eafcf57d'
 };
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState('generator');
+  const [selectedJar, setSelectedJar] = useState<File | null>(null);
+  const [portVersion, setPortVersion] = useState('1.20.1');
+  const [portLoader, setPortLoader] = useState('forge');
+  const [isPorting, setIsPorting] = useState(false);
   const [modDescription, setModDescription] = useState('');
   const [modLoader, setModLoader] = useState('forge');
   const [mcVersion, setMcVersion] = useState('1.20.1');
@@ -207,6 +212,75 @@ const Index = () => {
     }
   };
 
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && file.name.endsWith('.jar')) {
+      setSelectedJar(file);
+      toast.success(`Файл ${file.name} выбран`);
+    } else {
+      toast.error('Выбери .jar файл мода');
+    }
+  };
+
+  const handlePortMod = async () => {
+    if (!selectedJar) {
+      toast.error('Выбери JAR файл мода');
+      return;
+    }
+
+    setIsPorting(true);
+    toast.loading('Анализирую и портирую мод...', { id: 'porting' });
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const arrayBuffer = e.target?.result as ArrayBuffer;
+        const base64 = btoa(
+          new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+        );
+
+        const response = await fetch(API_URLS.portMod, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            jarBase64: base64,
+            targetVersion: portVersion,
+            loader: portLoader
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Ошибка портирования');
+        }
+
+        const portedMod: Mod = {
+          id: data.portId,
+          name: `${data.modData.modName || 'PortedMod'}_${portVersion}`,
+          description: `Портирован на ${portVersion}. Изменения: ${data.modData.changes?.join(', ') || 'базовая конвертация'}`,
+          loader: portLoader === 'forge' ? 'Forge' : 'Fabric',
+          version: portVersion,
+          date: new Date().toISOString().split('T')[0],
+          status: 'ready',
+          modData: data.modData
+        };
+
+        setMods([portedMod, ...mods]);
+        toast.success('Мод портирован! Можешь скачать обновленную версию', { id: 'porting' });
+        setSelectedJar(null);
+      };
+
+      reader.readAsArrayBuffer(selectedJar);
+    } catch (error: any) {
+      toast.error(error.message || 'Не удалось портировать мод', { id: 'porting' });
+    } finally {
+      setIsPorting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
@@ -227,10 +301,14 @@ const Index = () => {
         </header>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-8 h-14 pixel-border bg-card">
+          <TabsList className="grid w-full grid-cols-4 mb-8 h-14 pixel-border bg-card">
             <TabsTrigger value="generator" className="text-base pixel-button data-[state=active]:bg-primary">
               <Icon name="Cpu" className="mr-2" size={20} />
               Генератор
+            </TabsTrigger>
+            <TabsTrigger value="port" className="text-base pixel-button data-[state=active]:bg-primary">
+              <Icon name="RefreshCw" className="mr-2" size={20} />
+              Перенос
             </TabsTrigger>
             <TabsTrigger value="chat" className="text-base pixel-button data-[state=active]:bg-primary">
               <Icon name="MessageSquare" className="mr-2" size={20} />
@@ -348,6 +426,262 @@ const Index = () => {
                   <div className="flex items-start gap-2">
                     <Icon name="Check" size={16} className="text-primary mt-1" />
                     <span>Готовый Gradle-проект</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="port" className="space-y-6">
+            <Card className="pixel-border">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Icon name="RefreshCw" size={24} />
+                  Портирование мода
+                </CardTitle>
+                <CardDescription>
+                  Загрузи JAR мод и конвертируй его на любую версию Minecraft
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <Icon name="Upload" size={16} />
+                    JAR файл мода
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <label className="flex-1">
+                      <input
+                        type="file"
+                        accept=".jar"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        id="jar-upload"
+                      />
+                      <div className="pixel-border bg-card p-4 cursor-pointer hover:bg-muted/50 transition">
+                        <div className="flex items-center gap-3">
+                          <Icon name="FileArchive" size={24} className="text-primary" />
+                          <div>
+                            <p className="text-sm font-medium">
+                              {selectedJar ? selectedJar.name : 'Выбери .jar файл'}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {selectedJar ? `${(selectedJar.size / 1024).toFixed(2)} KB` : 'Кликни чтобы выбрать'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium flex items-center gap-2">
+                      <Icon name="Box" size={16} />
+                      Целевой загрузчик
+                    </label>
+                    <Select value={portLoader} onValueChange={setPortLoader}>
+                      <SelectTrigger className="pixel-border">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="pixel-border">
+                        <SelectItem value="forge">Forge</SelectItem>
+                        <SelectItem value="fabric">Fabric</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium flex items-center gap-2">
+                      <Icon name="Target" size={16} />
+                      Целевая версия
+                    </label>
+                    <Select value={portVersion} onValueChange={setPortVersion}>
+                      <SelectTrigger className="pixel-border">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="pixel-border max-h-60">
+                        {mcVersions.map(v => (
+                          <SelectItem key={v} value={v}>{v}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={handlePortMod}
+                  disabled={!selectedJar || isPorting}
+                  size="lg"
+                  className="w-full pixel-button pixel-border bg-secondary hover:bg-secondary/90 text-lg h-14"
+                >
+                  {isPorting ? (
+                    <>
+                      <Icon name="Loader2" className="mr-2 animate-spin" size={20} />
+                      Портирую мод...
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="Zap" className="mr-2" size={20} />
+                      Портировать на {portVersion}
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="pixel-border bg-muted/50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Icon name="Info" size={20} />
+                  Как работает портирование
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div className="flex items-start gap-2">
+                    <Icon name="Check" size={16} className="text-primary mt-1" />
+                    <span>Анализ всех Java классов мода</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Icon name="Check" size={16} className="text-primary mt-1" />
+                    <span>Обновление API под новую версию</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Icon name="Check" size={16} className="text-primary mt-1" />
+                    <span>Исправление breaking changes</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Icon name="Check" size={16} className="text-primary mt-1" />
+                    <span>Готовый Gradle проект</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="port" className="space-y-6">
+            <Card className="pixel-border">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Icon name="RefreshCw" size={24} />
+                  Портирование мода
+                </CardTitle>
+                <CardDescription>
+                  Загрузи JAR мод и конвертируй его на любую версию Minecraft
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <Icon name="Upload" size={16} />
+                    JAR файл мода
+                  </label>
+                  <label htmlFor="jar-upload">
+                    <input
+                      type="file"
+                      accept=".jar"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                      id="jar-upload"
+                    />
+                    <div className="pixel-border bg-card p-4 cursor-pointer hover:bg-muted/50 transition">
+                      <div className="flex items-center gap-3">
+                        <Icon name="FileArchive" size={24} className="text-primary" />
+                        <div>
+                          <p className="text-sm font-medium">
+                            {selectedJar ? selectedJar.name : 'Выбери .jar файл'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {selectedJar ? `${(selectedJar.size / 1024).toFixed(2)} KB` : 'Кликни чтобы выбрать'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium flex items-center gap-2">
+                      <Icon name="Box" size={16} />
+                      Целевой загрузчик
+                    </label>
+                    <Select value={portLoader} onValueChange={setPortLoader}>
+                      <SelectTrigger className="pixel-border">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="pixel-border">
+                        <SelectItem value="forge">Forge</SelectItem>
+                        <SelectItem value="fabric">Fabric</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium flex items-center gap-2">
+                      <Icon name="Target" size={16} />
+                      Целевая версия
+                    </label>
+                    <Select value={portVersion} onValueChange={setPortVersion}>
+                      <SelectTrigger className="pixel-border">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="pixel-border max-h-60">
+                        {mcVersions.map(v => (
+                          <SelectItem key={v} value={v}>{v}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={handlePortMod}
+                  disabled={!selectedJar || isPorting}
+                  size="lg"
+                  className="w-full pixel-button pixel-border bg-secondary hover:bg-secondary/90 text-lg h-14"
+                >
+                  {isPorting ? (
+                    <>
+                      <Icon name="Loader2" className="mr-2 animate-spin" size={20} />
+                      Портирую мод...
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="Zap" className="mr-2" size={20} />
+                      Портировать на {portVersion}
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="pixel-border bg-muted/50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Icon name="Info" size={20} />
+                  Как работает портирование
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div className="flex items-start gap-2">
+                    <Icon name="Check" size={16} className="text-primary mt-1" />
+                    <span>Анализ всех Java классов мода</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Icon name="Check" size={16} className="text-primary mt-1" />
+                    <span>Обновление API под новую версию</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Icon name="Check" size={16} className="text-primary mt-1" />
+                    <span>Исправление breaking changes</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Icon name="Check" size={16} className="text-primary mt-1" />
+                    <span>Готовый Gradle проект</span>
                   </div>
                 </div>
               </CardContent>

@@ -1,0 +1,32 @@
+{
+  "tests": [
+    {
+      "name": "Port mod to new version",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "jarBase64": "UEsDBBQAAAAIAA==",
+        "targetVersion": "1.20.1",
+        "loader": "forge"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Missing JAR returns error",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "targetVersion": "1.20.1"
+      },
+      "expectedStatus": 400,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
