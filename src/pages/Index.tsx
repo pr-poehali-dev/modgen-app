@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import Icon from '@/components/ui/icon';
 import { toast } from 'sonner';
+import JSZip from 'jszip';
 
 interface Mod {
   id: string;
@@ -104,46 +105,51 @@ const Index = () => {
     }
   };
 
-  const handleDownloadMod = (modId: string) => {
+  const handleDownloadMod = async (modId: string) => {
     const mod = mods.find(m => m.id === modId);
     if (!mod || !mod.modData) {
       toast.error('Данные мода не найдены');
       return;
     }
 
-    const files: any[] = [];
-    
-    if (mod.modData.mainClass) {
-      files.push({
-        path: `src/main/java/com/example/${mod.name.replace(/\s+/g, '').toLowerCase()}/Main.java`,
-        content: mod.modData.mainClass
-      });
-    }
-    
-    if (mod.modData.buildGradle) {
-      files.push({
-        path: 'build.gradle',
-        content: mod.modData.buildGradle
-      });
-    }
-    
-    if (mod.modData.files && Array.isArray(mod.modData.files)) {
-      files.push(...mod.modData.files);
-    }
+    toast.loading('Создаю ZIP архив...', { id: 'download' });
 
-    const readmeContent = `# ${mod.name}\n\n${mod.description}\n\nLoader: ${mod.loader}\nMinecraft Version: ${mod.version}\n\n## Компиляция\n\n1. Установи JDK 17+\n2. Запусти: ./gradlew build\n3. Готовый мод в build/libs/`;
-    files.push({ path: 'README.md', content: readmeContent });
+    try {
+      const zip = new JSZip();
+      const modName = mod.name.replace(/\s+/g, '').toLowerCase();
+      
+      if (mod.modData.mainClass) {
+        zip.file(`src/main/java/com/example/${modName}/${mod.modData.modName || 'Main'}.java`, mod.modData.mainClass);
+      }
+      
+      if (mod.modData.buildGradle) {
+        zip.file('build.gradle', mod.modData.buildGradle);
+      }
+      
+      if (mod.modData.files && Array.isArray(mod.modData.files)) {
+        mod.modData.files.forEach((file: any) => {
+          zip.file(file.path, file.content);
+        });
+      }
 
-    const fileList = files.map(f => `${f.path}:\n${f.content}`).join('\n\n---\n\n');
-    const blob = new Blob([fileList], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${mod.name.replace(/\s+/g, '_')}_mod.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    
-    toast.success('Мод скачан! Распакуй файлы по указанным путям.');
+      const readmeContent = `# ${mod.name}\n\n${mod.description}\n\nLoader: ${mod.loader}\nMinecraft Version: ${mod.version}\n\n## Компиляция\n\n1. Установи JDK 17+\n2. Запусти: gradlew build (Windows) или ./gradlew build (Linux/Mac)\n3. Готовый .jar файл будет в build/libs/\n\n## Установка\n\n1. Скомпилируй мод\n2. Скопируй .jar файл в папку mods Minecraft\n3. Запусти игру с ${mod.loader}`;
+      zip.file('README.md', readmeContent);
+      
+      zip.file('gradlew', `#!/bin/sh\n# Gradle wrapper script\njava -jar gradle/wrapper/gradle-wrapper.jar "$@"`);
+      zip.file('gradlew.bat', `@echo off\nrem Gradle wrapper script\njava -jar gradle\\wrapper\\gradle-wrapper.jar %*`);
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${mod.name.replace(/\s+/g, '_')}_mod.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      toast.success('ZIP архив скачан! Распакуй и запусти gradlew build', { id: 'download' });
+    } catch (error) {
+      toast.error('Ошибка создания архива', { id: 'download' });
+    }
   };
 
   const handleSendMessage = async () => {
